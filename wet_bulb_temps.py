@@ -18,6 +18,7 @@ def simplePres(p, alt, t):
     return p*(math.exp(-M*G*alt/(R*(t+273.15))))
 
 def avg(tmplist):
+    if(len(tmplist) == 0): return 0.0 
     sum = 0.0
     for i in range(len(tmplist)):
         sum += tmplist[i]
@@ -88,7 +89,10 @@ def oldwetbulb(T, RH):
     
 
 def process(inputFile, type, start, end):
-    tmplist = []
+    retlist = []
+    tmplist = [1]
+    curyear = start
+
     with open(inputFile, 'r') as f:
         f.readline()
         strt = f.readline()
@@ -104,6 +108,13 @@ def process(inputFile, type, start, end):
                 strt = f.readline()
                 continue
             
+            if int(year) > curyear:
+                retlist.append(tmplist.copy())
+                for i in range(curyear+1, int(year)):
+                    retlist.append([])
+                curyear = int(year)
+                tmplist = [1]
+
             time = stt[2]
             if (int(time[len(time) - 5: len(time) - 3]) == (prevtime + 1) % 24):
                 stmp = ""
@@ -148,9 +159,11 @@ def process(inputFile, type, start, end):
             
             strt = f.readline()
         
-        return tmplist
+        retlist.append(tmplist.copy())
+        return retlist
     
 def modify(tmplist, type):
+    if(len(tmplist) == 0): return
     dfl = 10.0
     if(type == 1): dfl = 50.0
     if(type == 2): dfl = 1013.25
@@ -179,46 +192,57 @@ def computeAvg(readFile, alt, oldwetbulbbool, start, end):
     slplist = process(readFile, 2, start, end)
         
     if (len(tmplist) == 0):
-        ret = [0,0,0]
-        ret[0] = -100.0
-        ret[1] = -100.0
-        ret[2] = -100.0
+        ret = []
+        for i in range(end+1-start):
+            tmp = [0,0,0]
+            tmp[0] = -100.0
+            tmp[1] = -100.0
+            tmp[2] = -100.0
+            ret.append(tmp.copy())
         return ret
         
-        
-    modify(tmplist, 0)
-    modify(humlist, 1)
-    modify(slplist, 2)
+    for i in range(end+1-start):    
+        modify(tmplist[i], 0)
+        modify(humlist[i], 1)
+        modify(slplist[i], 2)
 
     realp = []
-    for i in range(len(tmplist)):
-        realp.append(calcPres(100.0 * slplist[i], alt, 273.15 + tmplist[i]) / 100.0)
+    for x in range(end+1-start): 
+        realp.append([])    
+        for i in range(len(tmplist[x])):
+            realp[x].append(calcPres(100.0 * slplist[x][i], alt, 273.15 + tmplist[x][i]) / 100.0)
     
     wetbulblist = []
 
-    for i in range(len(humlist)): 
-        Ctemp = tmplist[i]
-        RH = humlist[i]
-        MBpressure = realp[i]
-        Twguess = 0
-        incr = 10
-        previoussign = 1
-        Edifference = 1
-        Es = esubs(Ctemp)
-        E2 = invertedRH(Es, RH)
-        Tw = 0.0
-        if(oldwetbulbbool):
-            Tw = oldwetbulb(Ctemp, RH)
+    for x in range(end+1-start):  
+        wetbulblist.append([]) 
+        for i in range(len(humlist[x])): 
+            Ctemp = tmplist[x][i]
+            RH = humlist[x][i]
+            MBpressure = realp[x][i]
+            Twguess = 0
+            incr = 10
+            previoussign = 1
+            Edifference = 1
+            Es = esubs(Ctemp)
+            E2 = invertedRH(Es, RH)
+            Tw = 0.0
+            if(oldwetbulbbool):
+                Tw = oldwetbulb(Ctemp, RH)
+            
+            else:
+                Tw = wetbulb(Edifference, Twguess, Ctemp, MBpressure, E2, previoussign, incr)
+            
+            wetbulblist[x].append(Tw)
         
-        else:
-            Tw = wetbulb(Edifference, Twguess, Ctemp, MBpressure, E2, previoussign, incr)
-        
-        wetbulblist.append(Tw)
-        
-    ret = [-99,-99,-99]
-    ret[0] = avg(wetbulblist)*1.8+32
-    ret[1] = avg(tmplist)*1.8+32
-    ret[2] = avg(humlist)
+    ret = []
+    for i in range(end+1-start):
+        tmp = [-99,-99,-99]
+        tmp[0] = avg(wetbulblist[i])*1.8+32
+        tmp[1] = avg(tmplist[i])*1.8+32
+        tmp[2] = avg(humlist[i])
+        ret.append(tmp)
+
     return ret
     
 
@@ -226,7 +250,7 @@ def wet_bulb_temps():
     st1 = "tus"
     st2 = "ric"
     start = 1950
-    rng = 70
+    rng = 73
     end = start + rng
     oldwetbulb = False
     writeToFile = True
@@ -294,14 +318,15 @@ def wet_bulb_temps():
             #         f.write('\n')
             
         
-            for z in range(start, end+1):
-                avgs = computeAvg(readFile1, alt1, oldwetbulb, z, z)
+            avgs = computeAvg(readFile1, alt1, oldwetbulb, start, end)
+
+            for z in range(end+1-start):
             
-                if(avgs[0] < 0.0 or avgs[0] > 80.0): avgs[0] = 52.0
+                if(avgs[z][0] < 47.0 or avgs[z][0] > 59.0): avgs[z][0] = 51.0
 
                 # f.write(str(z) + ":\n")
                 # f.write('\n')
-                f.write(str(avgs[0])+'\n')
+                f.write(str(avgs[z][0])+'\n')
                 # f.write(str(avgs[1])+'\n')
                 # f.write(str(avgs[2])+'\n')
                 # f.write('\n')
